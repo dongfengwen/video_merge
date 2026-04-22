@@ -203,6 +203,22 @@
     </div>
   </div>
 
+<script>
+// 拦截 Worker 构造函数，解决跨域重定向问题
+// 将跨域 module Worker 转为同源 blob URL，内部用 import 加载原始脚本
+const _NativeWorker = window.Worker;
+window.Worker = class extends _NativeWorker {
+  constructor(scriptURL, options) {
+    const url = scriptURL instanceof URL ? scriptURL.href : String(scriptURL);
+    if (options?.type === 'module' && url.startsWith('https://') && !url.startsWith(location.origin)) {
+      const blob = new Blob([`import "${url}";`], { type: 'text/javascript' });
+      super(URL.createObjectURL(blob), options);
+      return;
+    }
+    super(scriptURL, options);
+  }
+};
+</script>
 <script type="module">
 import { FFmpeg } from 'https://esm.sh/@ffmpeg/ffmpeg@0.12.10';
 import { fetchFile, toBlobURL } from 'https://esm.sh/@ffmpeg/util@0.12.1';
@@ -410,10 +426,6 @@ async function loadFFmpeg() {
   await ffmpeg.load({
     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-    classWorkerURL: await toBlobURL(
-      'https://esm.sh/@ffmpeg/ffmpeg@0.12.10/dist/esm/worker.js',
-      'text/javascript'
-    ),
   });
 
   ffmpegLoaded = true;
