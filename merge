@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MP4 视频合并</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f7;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 40px 16px;
+      color: #1d1d1f;
+    }
+    .container { width: 100%; max-width: 700px; }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+    .subtitle { font-size: 13px; color: #6e6e73; margin-bottom: 24px; }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 14px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.1);
+    }
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #6e6e73;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-bottom: 12px;
+    }
+    /* Drop zone */
+    .drop-zone {
+      border: 2px dashed #c7c7cc;
+      border-radius: 10px;
+      padding: 32px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      position: relative;
+    }
+    .drop-zone.hover { border-color: #007aff; background: #f0f7ff; }
+    .drop-zone input[type=file] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    .drop-icon { font-size: 32px; margin-bottom: 8px; }
+    .drop-text { font-size: 15px; font-weight: 500; color: #1d1d1f; }
+    .drop-sub { font-size: 12px; color: #aeaeb2; margin-top: 4px; }
+    /* File list */
+    #file-list { list-style: none; }
+    #file-list li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border: 1px solid #e5e5ea;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      background: #fafafa;
+      cursor: grab;
+      user-select: none;
+      transition: background .1s;
+    }
+    #file-list li.dragging { opacity: .4; }
+    #file-list li.drag-over { background: #e8f4ff; border-color: #007aff; }
+    .drag-handle { color: #c7c7cc; font-size: 14px; flex-shrink: 0; }
+    .file-num {
+      font-size: 11px; font-weight: 700; color: #aeaeb2;
+      min-width: 18px; text-align: right; flex-shrink: 0;
+    }
+    .file-info { flex: 1; min-width: 0; }
+    .file-name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-size { font-size: 11px; color: #aeaeb2; margin-top: 1px; }
+    .btn-remove {
+      border: none; background: none; color: #aeaeb2; font-size: 18px;
+      cursor: pointer; line-height: 1; padding: 2px 4px; flex-shrink: 0;
+      border-radius: 4px; transition: color .15s, background .15s;
+    }
+    .btn-remove:hover { color: #ff3b30; background: #fff0f0; }
+    .empty-hint { text-align: center; color: #aeaeb2; font-size: 14px; padding: 20px 0; }
+    /* Output */
+    .output-row { display: flex; gap: 8px; align-items: center; }
+    .output-row input {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1px solid #d1d1d6;
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: "SF Mono", "Menlo", monospace;
+      outline: none;
+    }
+    .output-row input:focus { border-color: #007aff; }
+    /* Merge button */
+    .btn-merge {
+      width: 100%;
+      padding: 13px;
+      font-size: 16px;
+      font-weight: 600;
+      background: #34c759;
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: opacity .15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .btn-merge:hover:not(:disabled) { opacity: .88; }
+    .btn-merge:disabled { opacity: .4; cursor: not-allowed; }
+    /* Status */
+    #status {
+      margin-top: 14px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 14px;
+      display: none;
+      line-height: 1.5;
+    }
+    #status.success { background: #d4edda; color: #155724; }
+    #status.error   { background: #f8d7da; color: #721c24; }
+    #status.info    { background: #d1ecf1; color: #0c5460; }
+    /* Progress */
+    .progress-wrap { margin-top: 14px; display: none; }
+    .progress-label { font-size: 13px; color: #6e6e73; margin-bottom: 6px; }
+    .progress-bar-bg {
+      height: 6px; background: #e5e5ea; border-radius: 3px; overflow: hidden;
+    }
+    .progress-bar { height: 100%; background: #007aff; border-radius: 3px; width: 0; transition: width .3s; }
+    /* Spinner */
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    /* Init overlay */
+    #init-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.5);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      z-index: 100; color: #fff; gap: 16px;
+    }
+    .init-spinner {
+      width: 40px; height: 40px;
+      border: 3px solid rgba(255,255,255,.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    .init-text { font-size: 16px; font-weight: 500; }
+    .init-sub { font-size: 12px; opacity: .7; }
+  </style>
+</head>
+<body>
+
+<div id="init-overlay">
+  <div class="init-spinner"></div>
+  <div class="init-text">正在加载 ffmpeg.wasm...</div>
+  <div class="init-sub">首次加载需从网络下载约 30MB，请稍候</div>
+</div>
+
+<div class="container">
+  <h1>MP4 视频合并</h1>
+  <p class="subtitle">纯浏览器端合并，文件不上传服务器 &nbsp;·&nbsp; 支持拖拽排序 &nbsp;·&nbsp; 无重编码，速度快</p>
+
+  <!-- 文件选择 -->
+  <div class="card">
+    <div class="section-title">添加视频文件</div>
+    <div class="drop-zone" id="drop-zone">
+      <input type="file" id="file-input" accept="video/mp4,.mp4" multiple />
+      <div class="drop-icon">🎬</div>
+      <div class="drop-text">点击选择文件，或拖放到此处</div>
+      <div class="drop-sub">支持同时选择多个 .mp4 文件</div>
+    </div>
+  </div>
+
+  <!-- 文件列表 -->
+  <div class="card">
+    <div class="section-title">合并顺序（可拖拽调整）</div>
+    <ul id="file-list">
+      <li class="empty-hint" id="empty-hint">还没有添加文件</li>
+    </ul>
+  </div>
+
+  <!-- 输出文件名 -->
+  <div class="card">
+    <div class="section-title">输出文件名</div>
+    <div class="output-row">
+      <input type="text" id="output-name" value="merged_output.mp4" spellcheck="false" />
+    </div>
+  </div>
+
+  <!-- 合并 -->
+  <button class="btn-merge" id="merge-btn" disabled onclick="mergeVideos()">
+    等待 ffmpeg 加载中...
+  </button>
+
+  <div class="progress-wrap" id="progress-wrap">
+    <div class="progress-label" id="progress-label">处理中...</div>
+    <div class="progress-bar-bg"><div class="progress-bar" id="progress-bar"></div></div>
+  </div>
+
+  <div id="status"></div>
+</div>
+
+<!-- ffmpeg.wasm 通过本地 HTTP server 加载，无跨域限制 -->
+<script>
+(async () => {
+  // ── Init ffmpeg ──────────────────────────────────────────────
+  const FFMPEG_CDN = "https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd";
+  const UTIL_CDN   = "https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd";
+  const CORE_CDN   = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm";
+
+  function loadScript(src) {
+    return new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = src; s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+
+  try {
+    await loadScript(`${FFMPEG_CDN}/ffmpeg.js`);
+    await loadScript(`${UTIL_CDN}/index.js`);
+  } catch (e) {
+    document.getElementById("init-overlay").innerHTML =
+      `<div style="font-size:16px;color:#ff6b6b">库加载失败：${e.message}</div>
+       <div style="font-size:13px;opacity:.7">请检查网络连接后刷新页面</div>`;
+    return;
+  }
+
+  const { FFmpeg } = window.FFmpegWASM;
+  const { fetchFile, toBlobURL } = window.FFmpegUtil;
+
+  const ffmpeg = new FFmpeg();
+
+  ffmpeg.on("log", ({ message }) => {
+    const m = message.match(/time=(\d+):(\d+):([\d.]+)/);
+    if (m) {
+      const secs = parseInt(m[1]) * 3600 + parseInt(m[2]) * 60 + parseFloat(m[3]);
+      if (totalDuration > 0) setProgress(Math.min(secs / totalDuration * 100, 99));
+    }
+  });
+
+  try {
+    await ffmpeg.load({
+      coreURL: await toBlobURL(`${CORE_CDN}/ffmpeg-core.js`, "text/javascript"),
+      wasmURL: await toBlobURL(`${CORE_CDN}/ffmpeg-core.wasm`, "application/wasm"),
+    });
+    document.getElementById("init-overlay").style.display = "none";
+    updateMergeBtn();
+  } catch (e) {
+    document.getElementById("init-overlay").innerHTML =
+      `<div style="font-size:16px;color:#ff6b6b">加载失败：${e.message}</div>
+       <div style="font-size:13px;opacity:.7">请检查网络连接后刷新页面</div>`;
+    return;
+  }
+
+  // ── State ─────────────────────────────────────────────────────
+  let fileItems = [];   // [{file, name, size}]
+  let dragSrcIdx = null;
+  let totalDuration = 0;
+  let ffmpegReady = true;
+
+  // ── Drop zone ─────────────────────────────────────────────────
+  const dz = document.getElementById("drop-zone");
+  const fi = document.getElementById("file-input");
+
+  fi.addEventListener("change", () => addFiles(Array.from(fi.files)));
+
+  dz.addEventListener("dragover", e => { e.preventDefault(); dz.classList.add("hover"); });
+  dz.addEventListener("dragleave", () => dz.classList.remove("hover"));
+  dz.addEventListener("drop", e => {
+    e.preventDefault(); dz.classList.remove("hover");
+    const dropped = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith(".mp4"));
+    if (dropped.length) addFiles(dropped);
+  });
+
+  function addFiles(files) {
+    files.forEach(f => {
+      if (f.name.toLowerCase().endsWith(".mp4") && !fileItems.find(x => x.name === f.name && x.size === f.size)) {
+        fileItems.push({ file: f, name: f.name, size: f.size });
+      }
+    });
+    fi.value = "";
+    renderList();
+    updateMergeBtn();
+    hideStatus();
+  }
+
+  function removeFile(idx) {
+    fileItems.splice(idx, 1);
+    renderList();
+    updateMergeBtn();
+  }
+
+  function renderList() {
+    const ul = document.getElementById("file-list");
+    ul.innerHTML = "";
+    if (!fileItems.length) {
+      ul.innerHTML = '<li class="empty-hint">还没有添加文件</li>';
+      return;
+    }
+    fileItems.forEach((item, i) => {
+      const li = document.createElement("li");
+      li.dataset.idx = i;
+      li.draggable = true;
+      li.innerHTML = `
+        <span class="drag-handle">⠿</span>
+        <span class="file-num">${i + 1}</span>
+        <div class="file-info">
+          <div class="file-name" title="${esc(item.name)}">${esc(item.name)}</div>
+          <div class="file-size">${fmtSize(item.size)}</div>
+        </div>
+        <button class="btn-remove" title="移除" onclick="removeFile(${i})">×</button>
+      `;
+      // drag events
+      li.addEventListener("dragstart", e => {
+        dragSrcIdx = i; li.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+      });
+      li.addEventListener("dragend", () => li.classList.remove("dragging"));
+      li.addEventListener("dragover", e => {
+        e.preventDefault();
+        ul.querySelectorAll("li").forEach(x => x.classList.remove("drag-over"));
+        li.classList.add("drag-over");
+      });
+      li.addEventListener("dragleave", () => li.classList.remove("drag-over"));
+      li.addEventListener("drop", e => {
+        e.preventDefault(); li.classList.remove("drag-over");
+        const to = parseInt(li.dataset.idx);
+        if (dragSrcIdx === null || dragSrcIdx === to) return;
+        const [moved] = fileItems.splice(dragSrcIdx, 1);
+        fileItems.splice(to, 0, moved);
+        dragSrcIdx = null; renderList();
+      });
+      ul.appendChild(li);
+    });
+  }
+
+  // ── Merge ─────────────────────────────────────────────────────
+  async function mergeVideos() {
+    if (fileItems.length < 2) { showStatus("error", "请至少添加 2 个视频文件"); return; }
+    const outName = document.getElementById("output-name").value.trim() || "merged_output.mp4";
+    const safeOut = outName.endsWith(".mp4") ? outName : outName + ".mp4";
+
+    const btn = document.getElementById("merge-btn");
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner"></div>合并中，请稍候...';
+    showStatus("info", "正在将文件写入内存...");
+    setProgress(0);
+    showProgress(true);
+
+    try {
+      // 估算总时长（用于进度条）
+      totalDuration = await estimateTotalDuration();
+
+      // 写入文件到 ffmpeg 虚拟文件系统
+      for (let i = 0; i < fileItems.length; i++) {
+        const fname = `input_${i}.mp4`;
+        setProgressLabel(`正在读取文件 ${i + 1}/${fileItems.length}...`);
+        await ffmpeg.writeFile(fname, await fetchFile(fileItems[i].file));
+      }
+
+      // 写入 concat list
+      const listContent = fileItems.map((_, i) => `file 'input_${i}.mp4'`).join("\n");
+      await ffmpeg.writeFile("list.txt", listContent);
+
+      setProgressLabel("正在合并（无重编码，快）...");
+      showStatus("info", "ffmpeg 合并中...");
+
+      await ffmpeg.exec([
+        "-f", "concat", "-safe", "0",
+        "-i", "list.txt",
+        "-c", "copy",
+        safeOut
+      ]);
+
+      setProgressLabel("正在导出文件...");
+      setProgress(100);
+
+      const data = await ffmpeg.readFile(safeOut);
+      const blob = new Blob([data.buffer], { type: "video/mp4" });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url; a.download = safeOut; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+
+      // 清理虚拟文件系统
+      for (let i = 0; i < fileItems.length; i++) await ffmpeg.deleteFile(`input_${i}.mp4`);
+      await ffmpeg.deleteFile("list.txt");
+      await ffmpeg.deleteFile(safeOut);
+
+      showStatus("success", `合并成功！文件 "${safeOut}" 已开始下载。`);
+    } catch (e) {
+      showStatus("error", "合并失败：" + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = "开始合并并下载";
+      showProgress(false);
+    }
+  }
+
+  async function estimateTotalDuration() {
+    let total = 0;
+    for (const item of fileItems) {
+      try {
+        const url = URL.createObjectURL(item.file);
+        total += await new Promise(res => {
+          const v = document.createElement("video");
+          v.src = url; v.preload = "metadata";
+          v.onloadedmetadata = () => { URL.revokeObjectURL(url); res(v.duration || 0); };
+          v.onerror = () => { URL.revokeObjectURL(url); res(0); };
+        });
+      } catch { /* ignore */ }
+    }
+    return total;
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────
+  function updateMergeBtn() {
+    const btn = document.getElementById("merge-btn");
+    if (!ffmpegReady) return;
+    btn.disabled = fileItems.length < 2;
+    btn.innerHTML = fileItems.length >= 2 ? "开始合并并下载" : "请至少添加 2 个文件";
+  }
+
+  function showStatus(type, msg) {
+    const el = document.getElementById("status");
+    el.className = type; el.textContent = msg; el.style.display = "block";
+  }
+  function hideStatus() { document.getElementById("status").style.display = "none"; }
+  function showProgress(show) {
+    document.getElementById("progress-wrap").style.display = show ? "block" : "none";
+  }
+  function setProgress(pct) {
+    document.getElementById("progress-bar").style.width = pct + "%";
+  }
+  function setProgressLabel(msg) {
+    document.getElementById("progress-label").textContent = msg;
+  }
+  function fmtSize(b) {
+    if (b > 1073741824) return (b / 1073741824).toFixed(1) + " GB";
+    if (b > 1048576) return (b / 1048576).toFixed(1) + " MB";
+    return (b / 1024).toFixed(0) + " KB";
+  }
+  function esc(s) {
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  // expose for inline onclick
+  window.removeFile = removeFile;
+  window.mergeVideos = mergeVideos;
+})();
+</script>
+</body>
+</html>
