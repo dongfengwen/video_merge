@@ -204,14 +204,18 @@
   </div>
 
 <script>
-// 拦截 Worker 构造函数，解决跨域重定向问题
-// 将跨域 module Worker 转为同源 blob URL，内部用 import 加载原始脚本
+// 拦截 Worker 构造函数：esm.sh 的 worker.js 会 404，重定向到 unpkg 真实文件
 const _NativeWorker = window.Worker;
 window.Worker = class extends _NativeWorker {
   constructor(scriptURL, options) {
     const url = scriptURL instanceof URL ? scriptURL.href : String(scriptURL);
-    if (options?.type === 'module' && url.startsWith('https://') && !url.startsWith(location.origin)) {
-      const blob = new Blob([`import "${url}";`], { type: 'text/javascript' });
+    if (options?.type === 'module' && !url.startsWith('blob:') && !url.startsWith(location.origin)) {
+      // esm.sh 的 worker.js 不存在，改用 unpkg 上的真实文件
+      let targetUrl = url;
+      if (url.includes('esm.sh') && url.includes('ffmpeg') && url.includes('worker')) {
+        targetUrl = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/worker.js';
+      }
+      const blob = new Blob([`import "${targetUrl}";`], { type: 'text/javascript' });
       super(URL.createObjectURL(blob), options);
       return;
     }
