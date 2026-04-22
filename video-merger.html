@@ -408,11 +408,15 @@ async function loadFFmpeg() {
 
   const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
 
-  // 手动获取 worker 源码并创建同源 blob URL（解决 esm.sh worker.js 404 + 跨域问题）
+  // 从 unpkg 获取真实的 worker 源码（esm.sh 的 worker.js 是空壳）
   setStatus('正在加载 FFmpeg Worker...');
-  const workerResp = await fetch('https://esm.sh/@ffmpeg/ffmpeg@0.12.10/dist/esm/worker.js');
+  const workerBase = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/';
+  const workerResp = await fetch(workerBase + 'worker.js');
   if (!workerResp.ok) throw new Error('无法加载 FFmpeg Worker: ' + workerResp.status);
-  const workerCode = await workerResp.text();
+  let workerCode = await workerResp.text();
+  // 将相对导入 (./const.js 等) 改写为 unpkg 绝对路径，否则 blob URL 中无法解析
+  workerCode = workerCode.replace(/from\s*['"](\.\/[^'"]+)['"]/g, (_, p) => `from "${workerBase}${p.slice(2)}"`);
+  workerCode = workerCode.replace(/import\s*['"](\.\/[^'"]+)['"]/g, (_, p) => `import "${workerBase}${p.slice(2)}"`);
   const workerBlob = new Blob([workerCode], { type: 'text/javascript' });
   const classWorkerURL = URL.createObjectURL(workerBlob);
 
