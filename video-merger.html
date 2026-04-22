@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>视频合并工具</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #242836;
+    --border: #2e3348; --text: #e4e6f0; --text2: #8b8fa8;
+    --primary: #6366f1; --primary-hover: #818cf8;
+    --danger: #ef4444; --success: #22c55e;
+    --radius: 12px;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; padding: 24px;
+  }
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+  .subtitle { color: var(--text2); margin-bottom: 32px; font-size: 14px; }
+  .container { width: 100%; max-width: 900px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 24px; margin-bottom: 20px;
+  }
+  .card-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .card-title svg { width: 20px; height: 20px; flex-shrink: 0; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 20px; border-radius: 8px; border: none;
+    font-size: 14px; font-weight: 500; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-outline {
+    background: transparent; color: var(--text); border: 1px solid var(--border);
+  }
+  .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
+  .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+  .btn-danger:hover { background: var(--danger); color: #fff; }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+  .folder-row { display: flex; align-items: center; gap: 12px; }
+  .folder-path {
+    flex: 1; padding: 10px 14px; border-radius: 8px;
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text2); font-size: 13px; min-height: 40px;
+    display: flex; align-items: center; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .folder-path.active { color: var(--text); }
+
+  .file-input-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+
+  /* 输出文件名 */
+  .output-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+  .output-row input {
+    flex: 1; padding: 10px 14px; border-radius: 8px;
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); font-size: 13px; outline: none;
+  }
+  .output-row input:focus { border-color: var(--primary); }
+  .output-row span { color: var(--text2); font-size: 13px; white-space: nowrap; }
+
+  /* 视频列表 */
+  .video-list { display: flex; flex-direction: column; gap: 8px; }
+  .video-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px; background: var(--surface2);
+    border: 1px solid var(--border); border-radius: 8px;
+    cursor: grab; transition: all 0.2s; user-select: none;
+  }
+  .video-item:active { cursor: grabbing; }
+  .video-item.dragging { opacity: 0.4; border-color: var(--primary); }
+  .video-item.drag-over { border-color: var(--primary); transform: translateY(2px); }
+  .drag-handle { color: var(--text2); display: flex; align-items: center; flex-shrink: 0; }
+  .video-info { flex: 1; min-width: 0; }
+  .video-name { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .video-meta { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  .video-thumb {
+    width: 80px; height: 45px; border-radius: 6px; overflow: hidden;
+    background: #000; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  }
+  .video-thumb video { width: 100%; height: 100%; object-fit: cover; }
+  .video-remove { flex-shrink: 0; }
+
+  .empty-state {
+    text-align: center; padding: 40px 20px; color: var(--text2); font-size: 14px;
+  }
+  .empty-state svg { width: 48px; height: 48px; margin-bottom: 12px; opacity: 0.4; }
+
+  /* 进度条 */
+  .progress-wrap { margin-top: 16px; display: none; }
+  .progress-wrap.active { display: block; }
+  .progress-bar-bg {
+    width: 100%; height: 8px; background: var(--surface2);
+    border-radius: 4px; overflow: hidden;
+  }
+  .progress-bar {
+    height: 100%; background: linear-gradient(90deg, var(--primary), var(--primary-hover));
+    border-radius: 4px; transition: width 0.3s; width: 0%;
+  }
+  .progress-text { font-size: 13px; color: var(--text2); margin-top: 8px; }
+
+  .status-msg { margin-top: 12px; font-size: 14px; padding: 10px 16px; border-radius: 8px; display: none; }
+  .status-msg.success { display: block; background: rgba(34,197,94,0.1); color: var(--success); }
+  .status-msg.error { display: block; background: rgba(239,68,68,0.1); color: var(--danger); }
+
+  .merge-actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+
+  .badge {
+    display: inline-flex; align-items: center; padding: 2px 8px;
+    border-radius: 12px; font-size: 12px; background: var(--surface2);
+    color: var(--text2); margin-left: 8px;
+  }
+
+  .browser-warning {
+    background: rgba(239,68,68,0.1); border: 1px solid var(--danger);
+    border-radius: var(--radius); padding: 16px; margin-bottom: 20px;
+    color: var(--danger); font-size: 14px; text-align: center; display: none;
+  }
+  .browser-warning.show { display: block; }
+
+  .idx { font-size: 13px; color: var(--text2); width: 24px; text-align: center; flex-shrink: 0; }
+</style>
+</head>
+<body>
+  <h1>视频合并工具</h1>
+  <p class="subtitle">纯前端处理，文件不会上传到任何服务器 | 仅支持 Chrome / Edge 浏览器</p>
+
+  <div class="container">
+    <div class="browser-warning" id="browserWarning">
+      当前浏览器不支持文件系统访问 API，请使用 Chrome 或 Edge 浏览器打开此页面。
+    </div>
+
+    <!-- 输入文件夹 -->
+    <div class="card">
+      <div class="card-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        输入来源
+      </div>
+      <div class="folder-row">
+        <button class="btn btn-primary" id="btnSelectInput" onclick="selectInputFolder()">选择文件夹</button>
+        <button class="btn btn-outline" id="btnSelectFiles" onclick="selectInputFiles()">选择文件</button>
+        <div class="folder-path" id="inputPath">未选择文件夹</div>
+      </div>
+      <div style="font-size:12px;color:var(--text2);margin-top:8px;">支持格式: mp4, webm, mov, avi, mkv, flv, ts, m4v</div>
+    </div>
+
+    <!-- 视频列表 -->
+    <div class="card">
+      <div class="card-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
+        视频列表
+        <span class="badge" id="videoCount">0 个</span>
+      </div>
+      <div id="videoList">
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <p>请先选择输入文件夹或文件</p>
+          <p style="margin-top:4px;font-size:12px;">拖拽视频项可调整合并顺序</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 输出设置 -->
+    <div class="card">
+      <div class="card-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        输出设置
+      </div>
+      <div class="folder-row">
+        <button class="btn btn-primary" onclick="selectOutputFolder()">选择输出文件夹</button>
+        <div class="folder-path" id="outputPath">未选择输出文件夹</div>
+      </div>
+      <div class="output-row">
+        <span>文件名:</span>
+        <input type="text" id="outputName" value="merged" placeholder="输出文件名">
+        <span>.mp4</span>
+      </div>
+    </div>
+
+    <!-- 合并操作 -->
+    <div class="card">
+      <div class="merge-actions">
+        <button class="btn btn-primary" id="btnMerge" onclick="startMerge()" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          开始合并
+        </button>
+        <button class="btn btn-outline btn-sm" id="btnCancel" onclick="cancelMerge()" style="display:none;">取消</button>
+        <span class="progress-text" id="statusText"></span>
+      </div>
+      <div class="progress-wrap" id="progressWrap">
+        <div class="progress-bar-bg">
+          <div class="progress-bar" id="progressBar"></div>
+        </div>
+      </div>
+      <div class="status-msg" id="statusMsg"></div>
+    </div>
+  </div>
+
+<script type="module">
+import { FFmpeg } from 'https://esm.sh/@ffmpeg/ffmpeg@0.12.10';
+import { fetchFile, toBlobURL } from 'https://esm.sh/@ffmpeg/util@0.12.1';
+
+// ── 全局状态 ──
+let videoFiles = [];      // { name, file, handle, size, url }
+let outputDirHandle = null;
+let ffmpeg = null;
+let ffmpegLoaded = false;
+let merging = false;
+
+// 浏览器检测
+if (!('showDirectoryPicker' in window)) {
+  document.getElementById('browserWarning').classList.add('show');
+}
+
+// 暴露到 window
+window.selectInputFolder = selectInputFolder;
+window.selectInputFiles = selectInputFiles;
+window.selectOutputFolder = selectOutputFolder;
+window.startMerge = startMerge;
+window.cancelMerge = cancelMerge;
+window.removeVideo = removeVideo;
+
+const VIDEO_EXTS = ['mp4','webm','mov','avi','mkv','flv','ts','m4v'];
+
+// ── 选择输入文件夹 ──
+async function selectInputFolder() {
+  try {
+    const dirHandle = await window.showDirectoryPicker({ mode: 'read' });
+    document.getElementById('inputPath').textContent = dirHandle.name;
+    document.getElementById('inputPath').classList.add('active');
+
+    const files = [];
+    for await (const entry of dirHandle.values()) {
+      if (entry.kind !== 'file') continue;
+      const ext = entry.name.split('.').pop().toLowerCase();
+      if (!VIDEO_EXTS.includes(ext)) continue;
+      const file = await entry.getFile();
+      files.push({ name: entry.name, file, size: file.size, url: URL.createObjectURL(file) });
+    }
+    files.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+    videoFiles = files;
+    renderVideoList();
+  } catch (e) {
+    if (e.name !== 'AbortError') console.error(e);
+  }
+}
+
+// ── 选择单个文件 ──
+async function selectInputFiles() {
+  try {
+    const handles = await window.showOpenFilePicker({
+      multiple: true,
+      types: [{
+        description: '视频文件',
+        accept: { 'video/*': VIDEO_EXTS.map(e => '.' + e) }
+      }]
+    });
+    for (const h of handles) {
+      const file = await h.getFile();
+      if (!videoFiles.some(v => v.name === file.name && v.size === file.size)) {
+        videoFiles.push({ name: file.name, file, size: file.size, url: URL.createObjectURL(file) });
+      }
+    }
+    document.getElementById('inputPath').textContent = `已选择 ${videoFiles.length} 个文件`;
+    document.getElementById('inputPath').classList.add('active');
+    renderVideoList();
+  } catch (e) {
+    if (e.name !== 'AbortError') console.error(e);
+  }
+}
+
+// ── 选择输出文件夹 ──
+async function selectOutputFolder() {
+  try {
+    outputDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    document.getElementById('outputPath').textContent = outputDirHandle.name;
+    document.getElementById('outputPath').classList.add('active');
+    updateMergeButton();
+  } catch (e) {
+    if (e.name !== 'AbortError') console.error(e);
+  }
+}
+
+// ── 渲染视频列表 ──
+function renderVideoList() {
+  const container = document.getElementById('videoList');
+  document.getElementById('videoCount').textContent = videoFiles.length + ' 个';
+  updateMergeButton();
+
+  if (videoFiles.length === 0) {
+    container.innerHTML = `<div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <p>请先选择输入文件夹或文件</p></div>`;
+    return;
+  }
+
+  container.innerHTML = '';
+  videoFiles.forEach((v, i) => {
+    const item = document.createElement('div');
+    item.className = 'video-item';
+    item.draggable = true;
+    item.dataset.index = i;
+    item.innerHTML = `
+      <div class="drag-handle"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg></div>
+      <span class="idx">${i + 1}</span>
+      <div class="video-thumb"><video src="${v.url}" muted preload="metadata"></video></div>
+      <div class="video-info">
+        <div class="video-name">${v.name}</div>
+        <div class="video-meta">${formatSize(v.size)}</div>
+      </div>
+      <button class="btn btn-danger btn-sm video-remove" onclick="removeVideo(${i})">移除</button>
+    `;
+    // 拖拽事件
+    item.addEventListener('dragstart', onDragStart);
+    item.addEventListener('dragover', onDragOver);
+    item.addEventListener('dragleave', onDragLeave);
+    item.addEventListener('drop', onDrop);
+    item.addEventListener('dragend', onDragEnd);
+    container.appendChild(item);
+  });
+}
+
+// ── 拖拽排序 ──
+let dragIdx = null;
+
+function onDragStart(e) {
+  dragIdx = +e.currentTarget.dataset.index;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+function onDragOver(e) {
+  e.preventDefault();
+  e.currentTarget.classList.add('drag-over');
+}
+function onDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+function onDrop(e) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  const dropIdx = +e.currentTarget.dataset.index;
+  if (dragIdx === null || dragIdx === dropIdx) return;
+  const [moved] = videoFiles.splice(dragIdx, 1);
+  videoFiles.splice(dropIdx, 0, moved);
+  renderVideoList();
+}
+function onDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  dragIdx = null;
+}
+
+function removeVideo(idx) {
+  URL.revokeObjectURL(videoFiles[idx].url);
+  videoFiles.splice(idx, 1);
+  renderVideoList();
+}
+
+// ── 辅助 ──
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+  return (bytes / 1073741824).toFixed(2) + ' GB';
+}
+
+function updateMergeButton() {
+  document.getElementById('btnMerge').disabled = !(videoFiles.length >= 2 && outputDirHandle);
+}
+
+function setStatus(text) {
+  document.getElementById('statusText').textContent = text;
+}
+function setProgress(pct) {
+  const wrap = document.getElementById('progressWrap');
+  wrap.classList.add('active');
+  document.getElementById('progressBar').style.width = pct + '%';
+}
+function showMsg(type, text) {
+  const el = document.getElementById('statusMsg');
+  el.className = 'status-msg ' + type;
+  el.textContent = text;
+}
+
+// ── 加载 FFmpeg ──
+async function loadFFmpeg() {
+  if (ffmpegLoaded) return;
+  setStatus('正在加载 FFmpeg 引擎...');
+  setProgress(5);
+  ffmpeg = new FFmpeg();
+
+  ffmpeg.on('progress', ({ progress }) => {
+    if (merging) {
+      const pct = Math.min(95, Math.round(30 + progress * 65));
+      setProgress(pct);
+    }
+  });
+
+  ffmpeg.on('log', ({ message }) => {
+    console.log('[ffmpeg]', message);
+  });
+
+  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+  await ffmpeg.load({
+    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+  });
+
+  ffmpegLoaded = true;
+  setProgress(15);
+}
+
+// ── 开始合并 ──
+async function startMerge() {
+  if (videoFiles.length < 2 || !outputDirHandle) return;
+  merging = true;
+  const btnMerge = document.getElementById('btnMerge');
+  const btnCancel = document.getElementById('btnCancel');
+  btnMerge.disabled = true;
+  btnCancel.style.display = '';
+  document.getElementById('statusMsg').className = 'status-msg';
+
+  try {
+    await loadFFmpeg();
+
+    setStatus('正在写入视频文件...');
+    setProgress(20);
+
+    // 写入所有文件到 MEMFS
+    const fileNames = [];
+    for (let i = 0; i < videoFiles.length; i++) {
+      const safeName = `input_${i}.${videoFiles[i].name.split('.').pop()}`;
+      fileNames.push(safeName);
+      setStatus(`正在写入 ${videoFiles[i].name} (${i + 1}/${videoFiles.length})...`);
+      setProgress(20 + Math.round((i / videoFiles.length) * 10));
+      const data = await fetchFile(videoFiles[i].file);
+      await ffmpeg.writeFile(safeName, data);
+    }
+
+    // 先尝试用 ts 中间格式拼接（更兼容）
+    setStatus('正在合并视频...');
+    setProgress(30);
+
+    // 方案：逐个转为 ts 再合并
+    const tsFiles = [];
+    for (let i = 0; i < fileNames.length; i++) {
+      const tsName = `part_${i}.ts`;
+      tsFiles.push(tsName);
+      setStatus(`正在转码 ${videoFiles[i].name} (${i + 1}/${fileNames.length})...`);
+      setProgress(30 + Math.round((i / fileNames.length) * 40));
+      await ffmpeg.exec([
+        '-i', fileNames[i],
+        '-c', 'copy',
+        '-bsf:v', 'h264_mp4toannexb',
+        '-f', 'mpegts',
+        tsName
+      ]);
+    }
+
+    // 使用 concat protocol 合并
+    setStatus('正在合并...');
+    setProgress(75);
+    const concatStr = tsFiles.map(f => `file '${f}'`).join('\n');
+    const encoder = new TextEncoder();
+    await ffmpeg.writeFile('list.txt', encoder.encode(concatStr));
+
+    const outputFileName = (document.getElementById('outputName').value.trim() || 'merged') + '.mp4';
+
+    await ffmpeg.exec([
+      '-f', 'concat',
+      '-safe', '0',
+      '-i', 'list.txt',
+      '-c', 'copy',
+      '-movflags', '+faststart',
+      outputFileName
+    ]);
+
+    setStatus('正在保存文件...');
+    setProgress(95);
+
+    // 读取并保存
+    const outputData = await ffmpeg.readFile(outputFileName);
+    const fileHandle = await outputDirHandle.getFileHandle(outputFileName, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(outputData);
+    await writable.close();
+
+    // 清理 MEMFS
+    for (const f of [...fileNames, ...tsFiles, 'list.txt', outputFileName]) {
+      try { await ffmpeg.deleteFile(f); } catch {}
+    }
+
+    setProgress(100);
+    setStatus('合并完成!');
+    showMsg('success', `合并完成! 已保存至: ${outputDirHandle.name}/${outputFileName} (${formatSize(outputData.length)})`);
+
+  } catch (e) {
+    console.error(e);
+    if (e.message?.includes('SharedArrayBuffer')) {
+      showMsg('error', '浏览器安全限制: 需要通过 HTTPS 或 localhost 访问此页面，或启用 Chrome 的 SharedArrayBuffer 支持。');
+    } else {
+      showMsg('error', '合并失败: ' + (e.message || e));
+    }
+  } finally {
+    merging = false;
+    btnMerge.disabled = false;
+    btnCancel.style.display = 'none';
+  }
+}
+
+function cancelMerge() {
+  // FFmpeg.wasm 0.12 doesn't have a clean cancel, but we can signal
+  merging = false;
+  setStatus('已取消');
+}
+</script>
+</body>
+</html>
